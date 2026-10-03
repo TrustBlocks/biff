@@ -5,7 +5,6 @@
             [next.jdbc :as jdbc]
             [xtdb.api :as xt]
             [xtdb.basis :as xt.basis]
-            [xtdb.protocols :as xtp]
             [xtdb.tx-ops :as tx-ops])
   (:import [java.sql BatchUpdateException Connection]
            [java.time Instant]
@@ -214,6 +213,11 @@
         (when-not was-conn?
           (.close conn))))))
 
+;; XTDB 2.2 removed the xtdb.protocols/ExecuteOp protocol: dispatching a parsed
+;; tx op onto a connection is now a private fn in xtdb.api, over plain-map ops
+;; ({:op :put-docs ...}). Reach it through its var rather than copy its helpers.
+(def ^:private execute-op! @#'xt/execute-op!)
+
 ;; Like xt/submit-tx but returns an :await-token that can be used to block until
 ;; the transaction has been indexed.
 (defn- submit-tx-for-token [ctx tx-ops tx-opts]
@@ -225,8 +229,8 @@
         (try
           (doseq [tx-op tx-ops
                   :let  [tx-op (cond-> tx-op
-                                 (not (record? tx-op)) tx-ops/parse-tx-op)]]
-            (xtp/execute-op! tx-op conn))
+                                 (not (map? tx-op)) tx-ops/parse-tx-op)]]
+            (execute-op! tx-op conn))
           (catch BatchUpdateException e
             (throw (ex-cause e))))
         (jdbc/execute! conn ["COMMIT"])

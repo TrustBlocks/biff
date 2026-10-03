@@ -3,8 +3,17 @@
             [com.biffweb.xtdb.impl.tx :as tx]
             [com.biffweb.xtdb.impl.util :as util]))
 
+(defn- table-exists?
+  ;; XTDB 2.2's SQL errors on a table that has never been written, where 2.1
+  ;; returned nothing -- and a diff reads a table before its first write.
+  ;; information_schema answers for a missing table with no rows instead.
+  [ctx table]
+  (seq (tx/q ctx {:select [[[:raw "1"] :present]]
+                  :from   [:information_schema.tables]
+                  :where  [:= :table_name (util/table-name table)]})))
+
 (defn- docs-by-id [ctx table ids]
-  (if (empty? ids)
+  (if (or (empty? ids) (not (table-exists? ctx table)))
     {}
     (into {}
           (map (juxt :xt/id identity))
